@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f4f7f2">
+  <title>GPS-Tracker</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #183126;
+      background: #f4f7f2;
+      font-synthesis: none;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; padding: 24px 16px calc(24px + env(safe-area-inset-bottom)); }
+    main { width: min(100%, 620px); margin: 0 auto; }
+    h1 { margin: 0; font-size: clamp(1.7rem, 6vw, 2.25rem); letter-spacing: -.04em; }
+    .intro { margin: 8px 0 22px; color: #52665b; line-height: 1.5; }
+    .card { background: #fff; border: 1px solid #e1e9e2; border-radius: 20px; padding: 20px; box-shadow: 0 8px 28px #1735250a; }
+    .status { display: flex; align-items: center; gap: 10px; color: #52665b; font-size: .95rem; }
+    .dot { width: 11px; height: 11px; border-radius: 50%; background: #9aa99f; flex: none; }
+    .dot.live { background: #1e9b61; box-shadow: 0 0 0 5px #1e9b611a; }
+    .coordinates { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 24px 0 16px; }
+    .coordinate { min-width: 0; padding: 14px; border-radius: 14px; background: #f4f7f2; }
+    .label { color: #63746a; font-size: .8rem; }
+    .value { display: block; margin-top: 5px; font-size: clamp(1.15rem, 5vw, 1.55rem); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+    .details { display: flex; flex-wrap: wrap; gap: 8px 18px; color: #63746a; font-size: .88rem; }
+    .actions { display: flex; gap: 10px; margin-top: 22px; }
+    button { min-height: 48px; border: 0; border-radius: 12px; padding: 0 18px; font: inherit; font-weight: 650; cursor: pointer; }
+    button:focus-visible { outline: 3px solid #78b99a; outline-offset: 2px; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    .primary { flex: 1; color: #fff; background: #19764c; }
+    .secondary { color: #244332; background: #e8f0e9; }
+    .message { min-height: 1.4em; margin: 14px 0 0; color: #52665b; font-size: .9rem; line-height: 1.45; }
+    .log-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin: 26px 2px 10px; }
+    .log-head h2 { margin: 0; font-size: 1.05rem; }
+    .count { color: #63746a; font-size: .85rem; }
+    .table-wrap { overflow-x: auto; border: 1px solid #e1e9e2; border-radius: 14px; background: white; }
+    table { width: 100%; border-collapse: collapse; font-size: .86rem; white-space: nowrap; }
+    th, td { padding: 11px 12px; text-align: left; border-bottom: 1px solid #edf1ed; }
+    th { color: #63746a; font-weight: 600; }
+    tbody tr:last-child td { border-bottom: 0; }
+    .empty { padding: 20px 12px; color: #718077; text-align: center; }
+    .note { margin: 16px 2px 0; color: #718077; font-size: .8rem; line-height: 1.5; }
+    @media (max-width: 420px) {
+      body { padding-inline: 12px; }
+      .card { padding: 16px; }
+      .actions { flex-direction: column; }
+      button { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>GPS-Tracker</h1>
+    <p class="intro">Zeichne deinen Standortverlauf direkt in diesem Browser auf.</p>
+
+    <section class="card" aria-label="GPS-Tracking">
+      <div class="status" role="status" aria-live="polite">
+        <span class="dot" id="status-dot"></span>
+        <span id="status-text">Bereit</span>
+      </div>
+
+      <div class="coordinates" aria-live="polite">
+        <div class="coordinate"><span class="label">Breitengrad</span><strong class="value" id="latitude">—</strong></div>
+        <div class="coordinate"><span class="label">Längengrad</span><strong class="value" id="longitude">—</strong></div>
+      </div>
+      <div class="details">
+        <span>Genauigkeit: <strong id="accuracy">—</strong></span>
+        <span>Letztes Update: <strong id="updated">—</strong></span>
+      </div>
+
+      <div class="actions">
+        <button class="primary" id="toggle" type="button">Tracking starten</button>
+        <button class="secondary" id="download" type="button" disabled>CSV herunterladen</button>
+      </div>
+      <p class="message" id="message">Tippe auf „Tracking starten“ und erlaube den Standortzugriff.</p>
+    </section>
+
+    <div class="log-head">
+      <h2>Aufgezeichnete Punkte</h2>
+      <span class="count" id="count">0 Punkte</span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Zeit</th><th>Breitengrad</th><th>Längengrad</th><th>Genauigkeit</th></tr></thead>
+        <tbody id="points"><tr><td class="empty" colspan="4">Noch keine Punkte aufgezeichnet.</td></tr></tbody>
+      </table>
+    </div>
+    <p class="note">Die Punkte bleiben nur während dieses Seitenbesuchs im Arbeitsspeicher. Beim Schließen oder Neuladen der Seite werden sie gelöscht. Die CSV wird nur auf dein Gerät heruntergeladen.</p>
+  </main>
+
+  <script>
+    (() => {
+      const $ = (id) => document.getElementById(id);
+      const startButton = $("toggle");
+      const downloadButton = $("download");
+      const points = [];
+      let watchId = null;
+
+      function setStatus(text, live = false) {
+        $("status-text").textContent = text;
+        $("status-dot").classList.toggle("live", live);
+      }
+
+      function setMessage(text) { $("message").textContent = text; }
+
+      function renderPoint(position) {
+        const { latitude, longitude, accuracy } = position.coords;
+        const point = {
+          time: new Date(position.timestamp),
+          latitude,
+          longitude,
+          accuracy
+        };
+        points.push(point);
+        $("latitude").textContent = latitude.toFixed(6);
+        $("longitude").textContent = longitude.toFixed(6);
+        $("accuracy").textContent = `${Math.round(accuracy)} m`;
+        $("updated").textContent = point.time.toLocaleTimeString("de-DE");
+        $("count").textContent = `${points.length} ${points.length === 1 ? "Punkt" : "Punkte"}`;
+        downloadButton.disabled = false;
+
+        const empty = $("points").querySelector(".empty");
+        if (empty) empty.parentElement.remove();
+        const row = document.createElement("tr");
+        [point.time.toLocaleString("de-DE"), latitude.toFixed(6), longitude.toFixed(6), `${Math.round(accuracy)} m`]
+          .forEach((value) => {
+            const cell = document.createElement("td");
+            cell.textContent = value;
+            row.appendChild(cell);
+          });
+        $("points").prepend(row);
+      }
+
+      function stopTracking() {
+        if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+        startButton.textContent = "Tracking starten";
+        setStatus("Pausiert");
+      }
+
+      startButton.addEventListener("click", () => {
+        if (watchId !== null) {
+          stopTracking();
+          setMessage("Tracking pausiert. Die bisherigen Punkte bleiben bis zum Schließen dieser Seite erhalten.");
+          return;
+        }
+        if (!window.isSecureContext || !navigator.geolocation) {
+          setStatus("Nicht verfügbar");
+          setMessage("Standortzugriff benötigt eine sichere Verbindung (HTTPS) und einen Browser mit Geolocation-Unterstützung.");
+          return;
+        }
+
+        setStatus("Standort wird gesucht …", true);
+        startButton.textContent = "Tracking stoppen";
+        setMessage("Warte auf GPS. Bitte erlaube den Standortzugriff, wenn dein Browser danach fragt.");
+        watchId = navigator.geolocation.watchPosition(
+          (position) => {
+            renderPoint(position);
+            setStatus("Tracking aktiv", true);
+            setMessage("Standort wird laufend aktualisiert. Das Intervall bestimmt dein Gerät.");
+          },
+          (error) => {
+            stopTracking();
+            const messages = {
+              1: "Standortzugriff wurde verweigert. Erlaube ihn in den Browser-Einstellungen und starte erneut.",
+              2: "Dein Standort ist gerade nicht verfügbar. Prüfe GPS und Standortdienste.",
+              3: "Die Standortabfrage hat zu lange gedauert. Versuche es erneut."
+            };
+            setStatus("Kein GPS-Fix");
+            setMessage(messages[error.code] || "Standort konnte nicht ermittelt werden.");
+          },
+          { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 }
+        );
+      });
+
+      downloadButton.addEventListener("click", () => {
+        if (!points.length) return;
+        const csvCell = (value) => `"${String(value).replaceAll('"', '""')}"`;
+        const rows = [
+          ["zeit_iso", "breitengrad", "laengengrad", "genauigkeit_m"],
+          ...points.map((point) => [point.time.toISOString(), point.latitude, point.longitude, point.accuracy])
+        ];
+        const csv = "\uFEFF" + rows.map((row) => row.map(csvCell).join(";")).join("\r\n");
+        const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `gps-track-${new Date().toISOString().replaceAll(":", "-").slice(0, 19)}.csv`;
+        link.click();
+        URL.revokeObjectURL(url);
+      });
+
+      window.addEventListener("pagehide", () => {
+        if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+      });
+    })();
+  </script>
+</body>
+</html>
